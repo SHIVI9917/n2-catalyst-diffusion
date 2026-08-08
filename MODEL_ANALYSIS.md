@@ -1,0 +1,264 @@
+# Analysis of the N<sub>2</sub> diffusion model
+
+Reference reading of `N2_catalyst_diffusion.ipynb` and the SI code it was repaired from
+(`DD_extracted/DD_model_code`: `dd_module.py`, `reverse_gen.py`, `Pred_Model_train.py`).
+Written as preparation for reusing this machinery on a different objective.
+
+---
+
+## 1. What the pipeline actually is
+
+Five stages, only one of which is generative:
+
+| # | Component | Role |
+|---|---|---|
+| 1 | `JY_data_dfilling_nonsite.xlsx` | 28 mono + 1368 bimetallic sites, 30 features. After the `N_ads ∈ (-2,1)` filter: **20 mono + 1098 bi** |
+| 2 | `Nads_opt.pkl` (RF, 1000 trees, depth 20) | forward property model, used **only as an independent judge** |
+| 3 | MLP surrogate (256-256-128, swish) | differentiable stand-in for the RF, supplies the guidance gradient |
+| 4 | DDPM over the 30-dim standardized vector | the generative prior |
+| 5 | `decode()` | projects a raw 30-float sample back onto the space of real alloys |
+
+Data split: 80/20 on the bimetallic set (`random_state=71`), mono appended to train.
+`StandardScaler` fitted on **all** rows — reproducing that exact split is what makes the
+pre-trained `Nads_opt.pkl` produce sane numbers instead of garbage.
+
+Diffusion trains on 878 rows. That is a very small dataset for a generative model, and it
+governs most of what follows.
+
+---
+
+## 2. The representation, and its hidden low dimensionality
+
+The 30-dim vector is three blocks:
+
+- **16** `frac_Ag … frac_W` — composition over {Ag, Au, Co, Cr, Cu, Fe, Ir, Mo, Ni, Os, Pd, Pt, Re, Rh, Ru, W}
+- **10** paired elemental descriptors — `radius_{A,B}`, `spatial_extent_{A,B}`, `ionization_energy_{A,B}`, `electron_affinity_{A,B}`, `electronegativity_{A,B}`
+- **4** `filling_a … filling_d` — local d-band filling of the four atoms in the adsorption ensemble
+
+**The critical structural fact: 26 of these 30 dimensions are not free.**
+
+The 16 composition channels are a one-hot pair (exactly two nonzero, at 50:50 or 75:25).
+The 10 descriptors are *deterministic lookups* of whichever two elements those are — they
+cannot be chosen independently. `decode()` enforces exactly this: it takes the two largest
+composition channels, snaps the ratio to an available one, and **overwrites all 10
+descriptors with tabulated values**, discarding whatever the model generated there.
+
+So the genuinely free degrees of freedom are:
+
+- a discrete choice of element pair (120 pairs × 2 ratios), plus
+- **4 continuous numbers** (`filling_a..d`), clipped to the observed range.
+
+A 30-dim DDPM is being used to sample what is effectively a categorical choice plus a
+4-vector. The generative machinery is heavily over-parameterised for the actual search
+space. This is not fatal — it works — but it explains the weak conditioning in §5.
+
+### 2a. A row is a *site*, not a material — and the pipeline never aggregates
+
+Measured on the filtered database (1098 rows):
+
+| | |
+|---|---|
+| distinct (element pair, ratio) materials | 308 |
+| rows per material | 3.6 average (max 4) |
+| mean `N_ads` spread within one fixed composition | **0.525 eV** |
+| median spread | 0.482 eV |
+| largest spread (Ag–Cr 50:50) | 2.102 eV |
+| mean within-material σ | **0.262 eV** |
+| overall dataset σ | 0.725 eV |
+
+**The within-material σ (0.262 eV) exceeds the RF's own test MAE (0.215 eV)** and accounts for
+36% of the total spread. Which site you are on matters more than how accurate the model is.
+
+`filling_a..d` in the feature vector *is* the site identity, so the diffusion model generates a
+site, the surrogate scores a site, and the ranked output table lists sites. Nothing anywhere
+aggregates over the sites belonging to one alloy. The implicit assumption is that a site can be
+selected independently of the material — but synthesising Pt₃Ir yields all of its sites, not the
+one the model preferred.
+
+Consequence for the reported result: "35 of 200 candidates within 0.15 eV of target" counts
+favourable **sites**, not favourable **materials**. The sibling sites of any top-ranked candidate
+carry ~0.5 eV of spread on average.
+
+This is the same defect that becomes unavoidable for a HEA (§7). It is not new there — with 3.6
+enumerable sites per material it is survivable and invisible; with ~10⁴ unenumerable environments
+and a site that is a random draw rather than a choice, it can no longer be hidden.
+
+---
+
+## 3. The generative model
+
+Textbook DDPM, no surprises:
+
+- linear β schedule, 1e-4 → 0.02, `TIMESTEPS = 1000`
+- ε-prediction objective, `MSE(noise, ε_θ(x_t, t))`
+- denoiser: sinusoidal t-embedding (128) → 2×Dense(128); x → Dense(128); concat → 256 → 256 → 30, swish
+- Adam, LR 5e-4, batch 128, 2000 epochs ≈ 14 000 gradient steps, ~106 s on CPU
+
+Training on the **standardized** vector matters: DDPM assumes the data is roughly N(0,1) so
+that x_T is pure noise. The SI code trained on raw features (`X_train = bi_train_x`, no
+scaler anywhere), where radii and ionization energies differ by orders of magnitude.
+
+The convergence check in §6b of the notebook is the part worth keeping. Falling loss proves
+nothing for a generative model; what matters is that **unguided** samples reproduce the
+training spread. In standardized space real data has std = 1.00 by construction:
+
+```
+                     real (train)      generated
+overall std                 0.998          0.943
+min                        -3.083         -2.947
+max                         5.059          5.957
+mean per-dim std            0.997          0.931
+```
+
+That is a converged reverse process. The published `EPOCHS = 50` (≈350 steps) gives
+std ≈ 1.95 and range [-9.5, 11.7] — visibly diverged.
+
+---
+
+## 4. Two conditioning mechanisms, one of them switched off
+
+This is the part most worth understanding before reusing the code.
+
+**(a) Training-time property loss** — `LAMBDA_COND`, currently **0.0**.
+The intended loss is
+
+```
+L = ‖ε - ε_θ(x_t,t)‖²  +  λ · ‖f(x̂₀) - E_target‖²
+```
+
+with `x̂₀ = (x_t - √(1-ᾱ_t)·ε_θ) / √ᾱ_t`, clipped to ±5, and the property term weighted by
+ᾱ_t so it is only trusted where the sample is still nearly clean. Every training log line
+reads `cond: 0.000000` — **this term contributed nothing to the trained checkpoint.**
+
+**(b) Sampling-time classifier guidance** — `GUIDANCE_SCALE = 10.0`. This is where all the
+targeting actually happens:
+
+```
+ε̂ ← ε_θ(x_t,t) + s · √(1-ᾱ_t) · ∇_x (f_φ(x) - E_target)²
+```
+
+with the gradient norm-clipped to 20 per sample. The sign is right: the update
+`x ← (1/√α_t)(x - coef2·ε̂)` turns a positive `+∇L` in ε̂ into a descent step on `L`.
+Scaling by `√(1-ᾱ_t)` keeps guidance commensurate with the noise level at each step.
+
+**Consequence:** the trained checkpoint is an *unconditional* prior over the feature
+distribution. All property targeting is post-hoc gradient steering at sample time. That is
+a defensible design — it means one trained model serves any target — but it should not be
+described as a conditional diffusion model.
+
+---
+
+## 5. How well does the conditioning work? Honestly: weakly.
+
+Target sweep (RF-scored, guidance = 10):
+
+| requested | generated mean | σ |
+|---|---|---|
+| −1.50 | −1.049 | 0.450 |
+| −1.00 | −0.830 | 0.427 |
+| −0.50 | −0.576 | 0.391 |
+|  0.00 | −0.380 | 0.415 |
+| +0.50 | −0.235 | 0.412 |
+
+Monotonic, but a **2.0 eV swing in the request produces 0.81 eV of response** — strong
+shrinkage toward the training mean (−0.575 eV).
+
+The guidance-scale table is more revealing:
+
+| guidance | sample std | mean E_ads | distinct alloys |
+|---|---|---|---|
+| 0 | 0.892 | −0.634 | 63 |
+| 10 | 0.875 | −0.380 | 54 |
+| 100 | 0.878 | −0.311 | 63 |
+
+Two things to read off this. First, guidance **saturates** — a 10× increase from 10 to 100
+buys 0.07 eV. Second, it does *not* blow the samples off-manifold: std and diversity are
+essentially unchanged at s=100. So the usual guidance trade-off (targeting vs. sample
+quality) is not what is limiting here.
+
+The real limiter is structural, from §2: **guidance moves all 30 dimensions, but `decode()`
+throws away 26 of them.** Composition is argmax-ed to a pair, descriptors are overwritten
+from a lookup table. The only guidance signal that survives to scoring is the element-pair
+choice plus 4 filling values. The DDPM prior also re-projects toward the data manifold at
+every one of the 1000 reverse steps, so guidance fights the prior and mostly loses.
+
+**Calibration caveat worth keeping in view:** RF test MAE is 0.215 eV (R² 0.795), surrogate
+0.207 eV (R² 0.840). The entire steering range achievable by guidance (~0.3 eV) is
+comparable to the error bar of the models doing the steering and the scoring. The reported
+"35 of 200 candidates within 0.15 eV of target" is a count inside the noise floor. Any
+claim of hitting a target to better than ~0.2 eV is not supported by these models.
+
+---
+
+## 6. What was actually broken in the published SI code
+
+Useful to know because it indicates which parts were never exercised by the authors.
+
+Fatal — the code cannot run at all:
+
+1. `VECTOR_SIZE = 18` in both `dd_module.py` and `reverse_gen.py`, but the data block is 30-dim.
+2. `schedule['alpha'][t]` — `schedule` is a class instance, not a dict → `TypeError`.
+3. `reverse_gen.py` references bare `alphas`, `alphas_cumprod`, `betas`, never defined at module scope (they are attributes of `schedule`) → `NameError`.
+4. `Pred_Model_train.py` imports `outlier_management.remove_outliers`, a module not present in the zip.
+
+Silently wrong — runs, produces meaningless results:
+
+5. `ml2_model.predict(x0_pred)` calls a scikit-learn Random Forest on a TF tensor inside a `GradientTape`. A forest is piecewise-constant and outside the graph, so ∂L_cond/∂θ is identically `None`. **The property-guidance term the paper describes is inert.**
+6. The pickle is loaded **inside** `train_step` — the RF is re-read from disk on every batch.
+7. `loss_condition = reduce_mean(square(pred_condition))` drives N_ads toward hard-coded **zero**; there is no target parameter.
+8. `Nads_opt.pkl` was fitted on standardized inputs, but `dd_module.py` feeds it raw features.
+9. Diffusion trains on unscaled features — breaks the N(0,1) assumption underpinning DDPM.
+10. `reverse_gen.py` performs **unconditional** sampling only. No guidance term exists anywhere in the sampler, so inverse design never happens.
+
+The two that mattered most for output quality were not the syntax errors: `EPOCHS = 50`
+(diverged reverse process) and `lambda_cond = 10.0` applied to an unclipped `x̂₀`, where
+the `1/√ᾱ_t` factor explodes at large t.
+
+---
+
+## 7. Porting to a high-entropy catalyst / O<sub>2</sub> objective
+
+What carries over unchanged, what needs work, ordered by how much work.
+
+**Transfers as-is.** The β schedule, denoiser architecture, ε-objective, ancestral sampler,
+classifier-guidance formula, the convergence check of §6b, and the discipline of scoring
+with a held-back model that took no part in generation. None of this is adsorbate-specific
+or chemistry-specific — it operates on a standardized feature vector.
+
+**Transfers with a swap.** The forward model and surrogate are just `features → scalar`.
+Any target works, provided there is data. Note the surrogate must stay differentiable — the
+whole reason it exists is that the forest cannot supply a gradient.
+
+**Needs redesign — the composition block.** The 16-channel composition vector is already a
+point on a simplex, so a 5+-element near-equimolar alloy is representable without changing
+the schema. But everything downstream assumes exactly two nonzero channels:
+`decode()` takes `argsort(fracs)[:2]` and snaps to {50:50, 75:25}. For a HEA that projection
+is simply wrong and would collapse every candidate to a pseudo-binary.
+
+**Needs redesign — the paired A/B descriptors.** With five elements there is no "A" and "B".
+The standard replacement is composition-weighted moments of each elemental property
+(mean, and a variance/range term capturing the disorder that defines a HEA) — i.e. Magpie /
+`matminer.ElementProperty`-style featurization, which is already installed in the `CompChem`
+env. This keeps the useful property that descriptors remain deterministic functions of
+composition, so the decoder's "overwrite with true values" step generalizes cleanly.
+
+**The part that becomes more important, not less — the site ensemble.** `filling_a..d`
+describes the four atoms of the adsorption ensemble. In a binary there are few distinct
+ensembles; in a 5-element HEA the ensemble identity *is* the physics — the defining feature
+of HEA catalysis is a near-continuous distribution of distinct local sites. The ensemble
+composition should become explicit in the representation rather than being summarized by
+four aggregate d-fillings, and the plausibility check (`fill_dist_to_nearest_real`) needs a
+per-ensemble reference rather than a per-element-pair one.
+
+**The encouraging consequence.** In §2 the free dimensionality here is ~4 continuous numbers
+plus a categorical choice, which is why a 30-dim DDPM is overkill for the N<sub>2</sub>
+problem. A HEA genuinely lives on a high-dimensional composition simplex with a
+combinatorially large ensemble space. Diffusion is a **better-justified** choice there than
+it is here — but only if the decoder and the descriptor block are rebuilt so that guidance
+survives decoding, which is precisely what caps performance in the current pipeline.
+
+**Data remains the blocker.** All three shipped databases (`JY_data_dfilling_nonsite`,
+`database_LQ`, `database_LQ_Mo`) are nitrogen-only — `N_ads`, `E_Nslab`. There is no oxygen
+adsorption data in this project. A quick check of MACE-MP-0 (cached locally, ~6 s/site on
+CPU) gives O on Pt(111) fcc = −0.37 eV against a DFT literature value of −1.0 to −1.4 eV,
+so it is not usable for absolute O binding energies without anchoring to DFT references.

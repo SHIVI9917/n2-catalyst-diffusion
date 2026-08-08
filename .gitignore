@@ -1,0 +1,23 @@
+# --- supporting-information data (NOT redistributable, see README) ---
+data/*
+!data/README.md
+*.xlsx
+*.pkl
+
+# --- regenerable artefacts ---
+checkpoints/
+outputs/*.npy
+
+# --- python ---
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.venv/
+venv/
+*.egg-info/
+
+# --- os / editor ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

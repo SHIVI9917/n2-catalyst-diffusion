@@ -1,0 +1,64 @@
+{
+  "config": {
+    "target": 0.0,
+    "epochs": 2000,
+    "guidance_scale": 10.0,
+    "seed": 71
+  },
+  "forward": {
+    "rf": {
+      "train_mae": 0.10619755080858206,
+      "train_r2": 0.9111264043894323,
+      "val_mae": 0.21538060381718438,
+      "val_r2": 0.7948075375278066
+    },
+    "surrogate": {
+      "val_mae": 0.2124403307342251,
+      "val_r2": 0.8346901219961497
+    }
+  },
+  "convergence": {
+    "real_std": 0.9979187846183777,
+    "gen_std": 0.9315056800842285,
+    "real_min": -3.0825092792510986,
+    "gen_min": -3.7123613357543945,
+    "real_max": 5.058728218078613,
+    "gen_max": 6.460456371307373,
+    "real_perdim_std": 0.9974325299263,
+    "gen_perdim_std": 0.9223722219467163
+  },
+  "generation": {
+    "n": 200,
+    "distinct_alloys": 118,
+    "within_0.15eV": 25,
+    "mean_abs_err": 0.4739
+  },
+  "sweep": [
+    {
+      "target": -1.5,
+      "mean_RF": -1.0245,
+      "std_RF": 0.4678
+    },
+    {
+      "target": -1.0,
+      "mean_RF": -0.8513,
+      "std_RF": 0.4117
+    },
+    {
+      "target": -0.5,
+      "mean_RF": -0.6277,
+      "std_RF": 0.3845
+    },
+    {
+      "target": 0.0,
+      "mean_RF": -0.4412,
+      "std_RF": 0.4505
+    },
+    {
+      "target": 0.5,
+      "mean_RF": -0.266,
+      "std_RF": 0.4183
+    }
+  ],
+  "total_seconds": 127.4
+}
