@@ -62,3 +62,37 @@ def train_surrogate(cfg: Config, ds: Dataset, verbose: int = 0):
     }
     model.trainable = False
     return model, metrics, hist.history
+
+
+def surrogate_path(cfg: Config):
+    """Where the guidance surrogate is persisted, next to the diffusion checkpoints."""
+    return cfg.ckpt_dir / "surrogate.keras"
+
+
+def save_surrogate(cfg: Config, model: keras.Model):
+    cfg.ckpt_dir.mkdir(parents=True, exist_ok=True)
+    model.save(surrogate_path(cfg))
+
+
+def load_surrogate(cfg: Config) -> keras.Model:
+    """Restore the frozen surrogate.
+
+    The surrogate must be checkpointed alongside the denoiser: `--skip-train` restores the
+    diffusion prior, but a *re-trained* surrogate would supply a different guidance gradient,
+    so the same seed would yield a different candidate set. Persisting both is what makes a
+    restored run reproduce the run that produced the checkpoint.
+    """
+    p = surrogate_path(cfg)
+    if not p.exists():
+        raise FileNotFoundError(f"no surrogate at {p}; run without --skip-train first")
+    model = keras.models.load_model(p)
+    model.trainable = False
+    return model
+
+
+def evaluate_surrogate(model: keras.Model, ds: Dataset) -> dict:
+    pred = model.predict(ds.X_val, verbose=0).ravel()
+    return {
+        "val_mae": float(mean_absolute_error(ds.y_val, pred)),
+        "val_r2": float(r2_score(ds.y_val, pred)),
+    }

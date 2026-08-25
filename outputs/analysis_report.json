@@ -1,0 +1,57 @@
+{
+  "seed": 71,
+  "target": 0.0,
+  "n_scan": 200,
+  "sites": {
+    "n_rows": 1098,
+    "n_materials": 308,
+    "rows_per_material_mean": 3.56,
+    "rows_per_material_max": 4,
+    "n_materials_multi_site": 294,
+    "spread_mean": 0.525,
+    "spread_median": 0.482,
+    "spread_max": 2.102,
+    "spread_max_material": "Ag50-Cr50",
+    "within_material_sigma": 0.262,
+    "dataset_sigma": 0.725,
+    "sigma_ratio": 0.361,
+    "variance_fraction": 0.13
+  },
+  "representation": {
+    "vector_size": 30,
+    "n_elements": 16,
+    "composition_channels": 16,
+    "paired_descriptors": 10,
+    "free_continuous_dims": 4,
+    "discrete_choices": 240,
+    "dims_overwritten_by_decoder": 26
+  },
+  "surrogate": {
+    "val_mae": 0.20546829722290252,
+    "val_r2": 0.8376899788419413
+  },
+  "guidance_scan": [
+    {
+      "guidance_scale": 0.0,
+      "sample_std": 0.943,
+      "mean_RF": -0.606,
+      "std_RF": 0.565,
+      "distinct_alloys": 127
+    },
+    {
+      "guidance_scale": 10.0,
+      "sample_std": 0.918,
+      "mean_RF": -0.37,
+      "std_RF": 0.407,
+      "distinct_alloys": 111
+    },
+    {
+      "guidance_scale": 100.0,
+      "sample_std": 0.932,
+      "mean_RF": -0.314,
+      "std_RF": 0.355,
+      "distinct_alloys": 114
+    }
+  ],
+  "total_seconds": 51.0
+}

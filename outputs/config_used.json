@@ -1,6 +1,6 @@
 {
-  "data_dir": "<set via N2DD_DATA_DIR>",
-  "work_dir": "<repo root>",
+  "data_dir": "C:\\Users\\Asus\\Desktop\\BTP\\DD_extracted\\DD_model_code",
+  "work_dir": "C:\\Users\\Asus\\Desktop\\BTP\\N2_catalyst_DD",
   "data_file": "JY_data_dfilling_nonsite.xlsx",
   "rf_file": "Nads_opt.pkl",
   "target": "N_ads",

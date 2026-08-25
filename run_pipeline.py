@@ -20,7 +20,9 @@ import matplotlib.pyplot as plt
 sys.path.insert(0, str(Path(__file__).parent))
 warnings.filterwarnings("ignore", category=UserWarning)
 
-from n2dd import Config, load, load_rf, evaluate_rf, train_surrogate, DiffusionModel, AlloyDecoder, screen
+from n2dd import (Config, load, load_rf, evaluate_rf, train_surrogate, save_surrogate,
+                  load_surrogate, evaluate_surrogate, surrogate_path,
+                  DiffusionModel, AlloyDecoder, screen)
 
 
 def parse_args():
@@ -64,9 +66,21 @@ def main():
     rf = load_rf(cfg)
     rf_metrics = evaluate_rf(rf, ds)
     print(f"      RF judge   val MAE {rf_metrics['val_mae']:.4f} eV   R2 {rf_metrics['val_r2']:.4f}")
-    surrogate, sur_metrics, _ = train_surrogate(cfg, ds)
+    # The surrogate is checkpointed with the denoiser: --skip-train restores the diffusion
+    # prior, and a re-trained surrogate would hand it a different guidance gradient, so the
+    # same seed would not reproduce the same candidates.
+    if args.skip_train and surrogate_path(cfg).exists():
+        surrogate = load_surrogate(cfg)
+        sur_metrics = evaluate_surrogate(surrogate, ds)
+        restored = True
+        print(f"      surrogate  restored from {surrogate_path(cfg).name}")
+    else:
+        surrogate, sur_metrics, _ = train_surrogate(cfg, ds)
+        save_surrogate(cfg, surrogate)
+        restored = False
     print(f"      surrogate  val MAE {sur_metrics['val_mae']:.4f} eV   R2 {sur_metrics['val_r2']:.4f}")
-    report["forward"] = {"rf": rf_metrics, "surrogate": sur_metrics}
+    report["forward"] = {"rf": rf_metrics, "surrogate": sur_metrics,
+                         "surrogate_restored": restored}
 
     # ----------------------------------------------------------- 3. diffusion
     dm = DiffusionModel(cfg, surrogate)

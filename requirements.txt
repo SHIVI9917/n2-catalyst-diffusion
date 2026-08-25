@@ -1,5 +1,5 @@
 # Verified on Python 3.9 (conda env "CompChem"), CPU only -- no GPU required.
-# A full pipeline run takes ~3.7 minutes on a 16-core CPU.
+# A full pipeline run takes ~3.5 minutes on a 16-core CPU (209 s measured).
 tensorflow-cpu==2.15.1
 scikit-learn==1.6.1
 numpy==1.26.4

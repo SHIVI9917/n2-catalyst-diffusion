@@ -5,11 +5,13 @@ See README.md for the list of defects found in the published code.
 """
 from .config import Config
 from .data import load, Dataset
-from .forward import load_rf, evaluate_rf, train_surrogate
+from .forward import (load_rf, evaluate_rf, train_surrogate,
+                      save_surrogate, load_surrogate, evaluate_surrogate, surrogate_path)
 from .diffusion import DiffusionModel, DiffusionSchedule
 from .decode import AlloyDecoder
 from . import screen
 
 __all__ = ["Config", "load", "Dataset", "load_rf", "evaluate_rf", "train_surrogate",
+           "save_surrogate", "load_surrogate", "evaluate_surrogate", "surrogate_path",
            "DiffusionModel", "DiffusionSchedule", "AlloyDecoder", "screen"]
 __version__ = "1.0.0"

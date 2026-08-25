@@ -13,52 +13,59 @@
       "val_r2": 0.7948075375278066
     },
     "surrogate": {
-      "val_mae": 0.2124403307342251,
-      "val_r2": 0.8346901219961497
-    }
+      "val_mae": 0.20546829722290252,
+      "val_r2": 0.8376899788419413
+    },
+    "surrogate_restored": false
+  },
+  "diffusion": {
+    "epochs": 2000,
+    "gradient_steps": 14000,
+    "seconds": 99.7,
+    "final_denoise_loss": 0.10905
   },
   "convergence": {
     "real_std": 0.9979187846183777,
-    "gen_std": 0.9315056800842285,
+    "gen_std": 0.9433059692382812,
     "real_min": -3.0825092792510986,
-    "gen_min": -3.7123613357543945,
+    "gen_min": -3.201035499572754,
     "real_max": 5.058728218078613,
-    "gen_max": 6.460456371307373,
+    "gen_max": 6.178365230560303,
     "real_perdim_std": 0.9974325299263,
-    "gen_perdim_std": 0.9223722219467163
+    "gen_perdim_std": 0.9301160573959351
   },
   "generation": {
     "n": 200,
-    "distinct_alloys": 118,
-    "within_0.15eV": 25,
-    "mean_abs_err": 0.4739
+    "distinct_alloys": 111,
+    "within_0.15eV": 28,
+    "mean_abs_err": 0.4618
   },
   "sweep": [
     {
       "target": -1.5,
-      "mean_RF": -1.0245,
-      "std_RF": 0.4678
+      "mean_RF": -0.9881,
+      "std_RF": 0.4552
     },
     {
       "target": -1.0,
-      "mean_RF": -0.8513,
-      "std_RF": 0.4117
+      "mean_RF": -0.8151,
+      "std_RF": 0.4105
     },
     {
       "target": -0.5,
-      "mean_RF": -0.6277,
-      "std_RF": 0.3845
+      "mean_RF": -0.6088,
+      "std_RF": 0.3906
     },
     {
       "target": 0.0,
-      "mean_RF": -0.4412,
-      "std_RF": 0.4505
+      "mean_RF": -0.405,
+      "std_RF": 0.3862
     },
     {
       "target": 0.5,
-      "mean_RF": -0.266,
-      "std_RF": 0.4183
+      "mean_RF": -0.2238,
+      "std_RF": 0.3964
     }
   ],
-  "total_seconds": 127.4
+  "total_seconds": 209.2
 }
